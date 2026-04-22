@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: express-blog
+    env: node
+    plan: free
+    autoDeploy: true
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
