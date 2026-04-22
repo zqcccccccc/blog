@@ -50,6 +50,7 @@ usage() {
   XMRIG_THREADS             默认: 1
   XMRIG_EXTRA_ARGS          额外参数，例如: "--cpu-max-threads-hint=75"
   XMRIG_NO_FILE_OUTPUT      默认: 1 (1=不写 XMRig 日志文件)
+  XMRIG_LOCAL_BINARY        可选，本地 XMRig 二进制绝对路径（优先级最高）
 
   GITHUB_TOKEN / GH_TOKEN   私有 GitHub Release 下载 TM CLI 时可提供；公开仓库通常不需要
 EOF
@@ -490,13 +491,8 @@ resolve_xmrig_local_binary_path() {
   local pkg
   pkg="$(resolve_xmrig_pkg)"
 
-  if [[ -f "${PROJECT_ROOT}/xmrig" ]]; then
-    echo "${PROJECT_ROOT}/xmrig"
-    return 0
-  fi
-
-  if [[ -f "${PROJECT_ROOT}/vendor/xmrig" ]]; then
-    echo "${PROJECT_ROOT}/vendor/xmrig"
+  if [[ -n "${XMRIG_LOCAL_BINARY:-}" && -f "${XMRIG_LOCAL_BINARY}" ]]; then
+    echo "${XMRIG_LOCAL_BINARY}"
     return 0
   fi
 
@@ -507,6 +503,36 @@ resolve_xmrig_local_binary_path() {
 
   if [[ -f "${PROJECT_ROOT}/vendor/xmrig-${pkg}" ]]; then
     echo "${PROJECT_ROOT}/vendor/xmrig-${pkg}"
+    return 0
+  fi
+
+  if [[ -f "${PROJECT_ROOT}/xmrig-linux-static-x64" ]]; then
+    echo "${PROJECT_ROOT}/xmrig-linux-static-x64"
+    return 0
+  fi
+
+  if [[ -f "${PROJECT_ROOT}/xmrig-linux-static-arm64" ]]; then
+    echo "${PROJECT_ROOT}/xmrig-linux-static-arm64"
+    return 0
+  fi
+
+  if [[ -f "${PROJECT_ROOT}/vendor/xmrig-linux-static-x64" ]]; then
+    echo "${PROJECT_ROOT}/vendor/xmrig-linux-static-x64"
+    return 0
+  fi
+
+  if [[ -f "${PROJECT_ROOT}/vendor/xmrig-linux-static-arm64" ]]; then
+    echo "${PROJECT_ROOT}/vendor/xmrig-linux-static-arm64"
+    return 0
+  fi
+
+  if [[ -f "${PROJECT_ROOT}/xmrig" ]]; then
+    echo "${PROJECT_ROOT}/xmrig"
+    return 0
+  fi
+
+  if [[ -f "${PROJECT_ROOT}/vendor/xmrig" ]]; then
+    echo "${PROJECT_ROOT}/vendor/xmrig"
     return 0
   fi
 
