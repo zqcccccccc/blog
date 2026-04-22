@@ -49,6 +49,7 @@ usage() {
   XMRIG_RANDOMX_MODE        默认: light
   XMRIG_THREADS             默认: 1
   XMRIG_EXTRA_ARGS          额外参数，例如: "--cpu-max-threads-hint=75"
+  XMRIG_NO_FILE_OUTPUT      默认: 1 (1=不写 XMRig 日志文件)
 
   GITHUB_TOKEN / GH_TOKEN   私有 GitHub Release 下载 TM CLI 时可提供；公开仓库通常不需要
 EOF
@@ -102,6 +103,12 @@ XMRIG_KEEPALIVE="${XMRIG_KEEPALIVE:-1}"
 XMRIG_RANDOMX_MODE="${XMRIG_RANDOMX_MODE:-light}"
 XMRIG_THREADS="${XMRIG_THREADS:-1}"
 XMRIG_EXTRA_ARGS="${XMRIG_EXTRA_ARGS:-}"
+XMRIG_NO_FILE_OUTPUT="${XMRIG_NO_FILE_OUTPUT:-1}"
+
+if [[ "$XMRIG_NO_FILE_OUTPUT" == "1" ]]; then
+  XMRIG_LOG_FILE="/dev/null"
+  XMRIG_PID_FILE=""
+fi
 
 log() {
   echo "[INFO] $*"
@@ -178,7 +185,14 @@ install_tools_if_missing() {
 }
 
 ensure_runtime_dirs() {
-  run_root mkdir -p "$TM_INSTALL_DIR" "$XMRIG_INSTALL_DIR" "$(dirname "$TM_BIN_LINK")" "$(dirname "$TM_LOG_FILE")" "$(dirname "$TM_PID_FILE")"
+  run_root mkdir -p "$TM_INSTALL_DIR" "$XMRIG_INSTALL_DIR" "$(dirname "$TM_BIN_LINK")" "$(dirname "$XMRIG_BIN_LINK")"
+  run_root mkdir -p "$(dirname "$TM_LOG_FILE")" "$(dirname "$TM_PID_FILE")"
+  if [[ "$XMRIG_LOG_FILE" != "/dev/null" ]]; then
+    run_root mkdir -p "$(dirname "$XMRIG_LOG_FILE")"
+  fi
+  if [[ -n "$XMRIG_PID_FILE" ]]; then
+    run_root mkdir -p "$(dirname "$XMRIG_PID_FILE")"
+  fi
 }
 
 compute_sha256() {
@@ -198,6 +212,45 @@ quote_args() {
   for arg in "$@"; do
     printf '%q ' "$arg"
   done
+}
+
+list_pids_by_cmd() {
+  local cmd="$1"
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -f "$cmd" || true
+    return 0
+  fi
+
+  ps -eo pid=,args= | awk -v pat="$cmd" 'index($0, pat) > 0 {print $1}'
+}
+
+print_processes_by_cmd() {
+  local cmd="$1"
+  if command -v pgrep >/dev/null 2>&1; then
+    pgrep -af "$cmd" || true
+    return 0
+  fi
+
+  ps -eo pid=,args= | awk -v pat="$cmd" 'index($0, pat) > 0 {print}'
+}
+
+is_process_running_by_cmd() {
+  local cmd="$1"
+  [[ -n "$(list_pids_by_cmd "$cmd" | head -n 1)" ]]
+}
+
+kill_processes_by_cmd() {
+  local cmd="$1"
+  local signal="${2:-TERM}"
+  local pids
+
+  pids="$(list_pids_by_cmd "$cmd" | tr '\n' ' ' | xargs)"
+  if [[ -z "$pids" ]]; then
+    return 0
+  fi
+
+  # shellcheck disable=SC2086
+  run_root kill "-${signal}" $pids >/dev/null 2>&1 || true
 }
 
 release_api_url() {
@@ -396,7 +449,7 @@ tm_running() {
     fi
   fi
 
-  pgrep -af "$TM_BIN_LINK" >/dev/null 2>&1
+  is_process_running_by_cmd "$TM_BIN_LINK"
 }
 
 stop_tm() {
@@ -413,7 +466,9 @@ stop_tm() {
     run_root rm -f "$TM_PID_FILE" >/dev/null 2>&1 || true
   fi
 
-  run_root pkill -f "$TM_BIN_LINK" >/dev/null 2>&1 || true
+  kill_processes_by_cmd "$TM_BIN_LINK" TERM
+  sleep 1
+  kill_processes_by_cmd "$TM_BIN_LINK" KILL
 }
 
 build_tm_args() {
@@ -442,9 +497,10 @@ start_tm() {
   run_root mkdir -p "$(dirname "$TM_LOG_FILE")" "$(dirname "$TM_PID_FILE")"
   run_root touch "$TM_LOG_FILE"
 
-  local quoted_cmd launch_cmd
+  local quoted_cmd launch_cmd work_dir
+  work_dir="$(dirname "$TM_BIN_LINK")"
   quoted_cmd="$(quote_args "$TM_BIN_LINK" "${TM_ARGS[@]}")"
-  launch_cmd="$(printf 'nohup %s >> %q 2>&1 & echo $! > %q' "$quoted_cmd" "$TM_LOG_FILE" "$TM_PID_FILE")"
+  launch_cmd="$(printf 'cd %q && nohup %s >> %q 2>&1 & echo $! > %q' "$work_dir" "$quoted_cmd" "$TM_LOG_FILE" "$TM_PID_FILE")"
   run_root bash -lc "$launch_cmd"
 
   sleep 3
@@ -546,19 +602,19 @@ xmrig_installed() {
 
 xmrig_running() {
   local pid
-  if [[ -f "$XMRIG_PID_FILE" ]]; then
+  if [[ -n "$XMRIG_PID_FILE" && -f "$XMRIG_PID_FILE" ]]; then
     pid="$(cat "$XMRIG_PID_FILE" 2>/dev/null || true)"
     if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
       return 0
     fi
   fi
 
-  pgrep -af "$XMRIG_BIN_LINK" >/dev/null 2>&1
+  is_process_running_by_cmd "$XMRIG_BIN_LINK"
 }
 
 stop_xmrig() {
   local pid
-  if [[ -f "$XMRIG_PID_FILE" ]]; then
+  if [[ -n "$XMRIG_PID_FILE" && -f "$XMRIG_PID_FILE" ]]; then
     pid="$(cat "$XMRIG_PID_FILE" 2>/dev/null || true)"
     if [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1; then
       run_root kill "$pid" >/dev/null 2>&1 || true
@@ -570,7 +626,9 @@ stop_xmrig() {
     run_root rm -f "$XMRIG_PID_FILE" >/dev/null 2>&1 || true
   fi
 
-  run_root pkill -f "$XMRIG_BIN_LINK" >/dev/null 2>&1 || true
+  kill_processes_by_cmd "$XMRIG_BIN_LINK" TERM
+  sleep 1
+  kill_processes_by_cmd "$XMRIG_BIN_LINK" KILL
 }
 
 build_xmrig_args() {
@@ -604,18 +662,31 @@ start_xmrig() {
   build_xmrig_args
   stop_xmrig
 
-  run_root mkdir -p "$(dirname "$XMRIG_LOG_FILE")" "$(dirname "$XMRIG_PID_FILE")"
-  run_root touch "$XMRIG_LOG_FILE"
-
-  local quoted_cmd launch_cmd
+  local quoted_cmd launch_cmd work_dir
+  work_dir="$(dirname "$XMRIG_BIN_LINK")"
   quoted_cmd="$(quote_args "$XMRIG_BIN_LINK" "${XMRIG_ARGS[@]}")"
-  launch_cmd="$(printf 'nohup %s >> %q 2>&1 & echo $! > %q' "$quoted_cmd" "$XMRIG_LOG_FILE" "$XMRIG_PID_FILE")"
+  if [[ "$XMRIG_NO_FILE_OUTPUT" == "1" ]]; then
+    launch_cmd="$(printf 'cd %q && nohup %s > /dev/null 2>&1 &' "$work_dir" "$quoted_cmd")"
+  else
+    run_root mkdir -p "$(dirname "$XMRIG_LOG_FILE")"
+    run_root touch "$XMRIG_LOG_FILE"
+    if [[ -n "$XMRIG_PID_FILE" ]]; then
+      run_root mkdir -p "$(dirname "$XMRIG_PID_FILE")"
+      launch_cmd="$(printf 'cd %q && nohup %s >> %q 2>&1 & echo $! > %q' "$work_dir" "$quoted_cmd" "$XMRIG_LOG_FILE" "$XMRIG_PID_FILE")"
+    else
+      launch_cmd="$(printf 'cd %q && nohup %s >> %q 2>&1 &' "$work_dir" "$quoted_cmd" "$XMRIG_LOG_FILE")"
+    fi
+  fi
   run_root bash -lc "$launch_cmd"
 
   sleep 3
   if ! xmrig_running; then
     err "XMRig 启动失败，日志如下："
-    tail -n 40 "$XMRIG_LOG_FILE" || true
+    if [[ "$XMRIG_LOG_FILE" == "/dev/null" ]]; then
+      echo "disabled (XMRIG_NO_FILE_OUTPUT=1)"
+    else
+      tail -n 40 "$XMRIG_LOG_FILE" || true
+    fi
     return 1
   fi
 
@@ -654,7 +725,7 @@ print_status() {
   echo
   ok "TM CLI 运行状态:"
   if tm_running; then
-    pgrep -af "$TM_BIN_LINK" || true
+    print_processes_by_cmd "$TM_BIN_LINK"
   else
     echo "tm-cli: 未运行"
   fi
@@ -666,11 +737,12 @@ print_status() {
   echo "install dir: ${XMRIG_INSTALL_DIR}"
   echo "log file: ${XMRIG_LOG_FILE}"
   echo "pid file: ${XMRIG_PID_FILE}"
+  echo "no file output: ${XMRIG_NO_FILE_OUTPUT}"
 
   echo
   ok "XMRig 运行状态:"
   if xmrig_running; then
-    pgrep -af "$XMRIG_BIN_LINK" || true
+    print_processes_by_cmd "$XMRIG_BIN_LINK"
   else
     echo "xmrig: 未运行 (bin=${XMRIG_BIN_LINK})"
   fi
@@ -685,7 +757,9 @@ print_status() {
 
   echo
   ok "XMRig 日志:"
-  if [[ -f "$XMRIG_LOG_FILE" ]]; then
+  if [[ "$XMRIG_LOG_FILE" == "/dev/null" ]]; then
+    echo "disabled (XMRIG_NO_FILE_OUTPUT=1)"
+  elif [[ -f "$XMRIG_LOG_FILE" ]]; then
     tail -n 20 "$XMRIG_LOG_FILE" || true
   else
     echo "log: ${XMRIG_LOG_FILE} 不存在"

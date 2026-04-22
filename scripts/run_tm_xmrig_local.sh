@@ -48,9 +48,9 @@ install_tm_binary() {
 }
 
 install_xmrig_binary() {
-  local local_bin target_path
-  # Keep local-only mode simple: use the repo binary name first.
-  local_bin="${PROJECT_ROOT}/xmrig-linux-static-x64"
+  local local_bin target_path pkg
+  pkg="$(resolve_xmrig_pkg)"
+  local_bin="${PROJECT_ROOT}/xmrig-${pkg}"
   if [[ ! -f "$local_bin" ]]; then
     local_bin="$(resolve_xmrig_local_binary_path || true)"
   fi
