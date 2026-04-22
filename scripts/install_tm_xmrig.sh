@@ -306,12 +306,12 @@ resolve_tm_local_asset_path() {
   local asset_name
   asset_name="$(resolve_tm_asset_name)"
 
-  if [[ -x "${PROJECT_ROOT}/${asset_name}" ]]; then
+  if [[ -f "${PROJECT_ROOT}/${asset_name}" ]]; then
     echo "${PROJECT_ROOT}/${asset_name}"
     return 0
   fi
 
-  if [[ -x "${PROJECT_ROOT}/vendor/${asset_name}" ]]; then
+  if [[ -f "${PROJECT_ROOT}/vendor/${asset_name}" ]]; then
     echo "${PROJECT_ROOT}/vendor/${asset_name}"
     return 0
   fi
@@ -478,22 +478,22 @@ resolve_xmrig_local_binary_path() {
   local pkg
   pkg="$(resolve_xmrig_pkg)"
 
-  if [[ -x "${PROJECT_ROOT}/xmrig" ]]; then
+  if [[ -f "${PROJECT_ROOT}/xmrig" ]]; then
     echo "${PROJECT_ROOT}/xmrig"
     return 0
   fi
 
-  if [[ -x "${PROJECT_ROOT}/vendor/xmrig" ]]; then
+  if [[ -f "${PROJECT_ROOT}/vendor/xmrig" ]]; then
     echo "${PROJECT_ROOT}/vendor/xmrig"
     return 0
   fi
 
-  if [[ -x "${PROJECT_ROOT}/xmrig-${pkg}" ]]; then
+  if [[ -f "${PROJECT_ROOT}/xmrig-${pkg}" ]]; then
     echo "${PROJECT_ROOT}/xmrig-${pkg}"
     return 0
   fi
 
-  if [[ -x "${PROJECT_ROOT}/vendor/xmrig-${pkg}" ]]; then
+  if [[ -f "${PROJECT_ROOT}/vendor/xmrig-${pkg}" ]]; then
     echo "${PROJECT_ROOT}/vendor/xmrig-${pkg}"
     return 0
   fi

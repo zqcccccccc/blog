@@ -27,8 +27,8 @@ require_local_binary() {
   local label="$1"
   local file_path="$2"
 
-  if [[ -z "$file_path" || ! -x "$file_path" ]]; then
-    err "${label} 本地二进制不存在或不可执行。"
+  if [[ -z "$file_path" || ! -f "$file_path" ]]; then
+    err "${label} 本地二进制不存在。"
     err "请把对应 Linux 二进制放到项目根目录，或改用 scripts/install_tm_xmrig.sh。"
     return 1
   fi
