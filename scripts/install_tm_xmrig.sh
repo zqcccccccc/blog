@@ -3,7 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-DEFAULT_RUNTIME_DIR="${PROJECT_ROOT}/.runtime"
+PROJECT_NAME="$(basename "${PROJECT_ROOT}")"
+DEFAULT_RUNTIME_BASE="${TMPDIR:-/tmp}"
+DEFAULT_RUNTIME_DIR="${DEFAULT_RUNTIME_BASE}/${PROJECT_NAME}-runtime"
 
 usage() {
   cat <<'EOF'
@@ -25,20 +27,20 @@ usage() {
   TM_RELEASE_REPO           默认: express-blog
   TM_RELEASE_TAG            默认: tm-cli-0.1
 
-  TM_INSTALL_DIR            默认: <repo>/.runtime/tm-cli
-  TM_BIN_LINK               默认: <repo>/.runtime/bin/tm-cli
-  TM_LOG_FILE               默认: <repo>/.runtime/logs/tm-cli.log
-  TM_PID_FILE               默认: <repo>/.runtime/pids/tm-cli.pid
+  TM_INSTALL_DIR            默认: /tmp/<repo>-runtime/tm-cli
+  TM_BIN_LINK               默认: /tmp/<repo>-runtime/bin/tm-cli
+  TM_LOG_FILE               默认: /tmp/<repo>-runtime/logs/tm-cli.log
+  TM_PID_FILE               默认: /tmp/<repo>-runtime/pids/tm-cli.pid
   TM_DEVICE_NAME            可选，传给 CLI 的 --device-name
   TM_VERBOSE_LOGGING        默认: 0 (1=启用 --verbose-logging)
   TM_EXTRA_ARGS             额外参数，例如: "--device-ids abc --nooff"
   TM_SKIP_SHA256            默认: 0 (1=跳过 sha256 校验)
 
   XMRIG_VERSION             默认: 6.26.0
-  XMRIG_INSTALL_DIR         默认: <repo>/.runtime/xmrig
-  XMRIG_BIN_LINK            默认: <repo>/.runtime/bin/xmrig
-  XMRIG_LOG_FILE            默认: <repo>/.runtime/logs/xmrig.log
-  XMRIG_PID_FILE            默认: <repo>/.runtime/pids/xmrig.pid
+  XMRIG_INSTALL_DIR         默认: /tmp/<repo>-runtime/xmrig
+  XMRIG_BIN_LINK            默认: /tmp/<repo>-runtime/bin/xmrig
+  XMRIG_LOG_FILE            默认: /tmp/<repo>-runtime/logs/xmrig.log
+  XMRIG_PID_FILE            默认: /tmp/<repo>-runtime/pids/xmrig.pid
   XMRIG_ALGO                默认: rx/0
   XMRIG_POOL                默认: rx.unmineable.com:443
   XMRIG_PASS                默认: x

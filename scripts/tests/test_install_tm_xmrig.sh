@@ -93,10 +93,11 @@ test_release_download_url() {
 }
 
 test_default_values() {
+  local runtime_base="${TMPDIR:-/tmp}"
   assert_eq "$TM_TOKEN" "$DEFAULT_TM_TOKEN" "default tm token"
   assert_eq "$XMRIG_USER" "$DEFAULT_XMRIG_USER" "default xmrig user"
-  assert_eq "$TM_BIN_LINK" "${ROOT_DIR}/.runtime/bin/tm-cli" "default tm bin link"
-  assert_eq "$XMRIG_BIN_LINK" "${ROOT_DIR}/.runtime/bin/xmrig" "default xmrig bin link"
+  assert_eq "$TM_BIN_LINK" "${runtime_base}/express-blog-runtime/bin/tm-cli" "default tm bin link"
+  assert_eq "$XMRIG_BIN_LINK" "${runtime_base}/express-blog-runtime/bin/xmrig" "default xmrig bin link"
 }
 
 test_local_paths() {
