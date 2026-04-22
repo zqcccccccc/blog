@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DEFAULT_RUNTIME_DIR="${PROJECT_ROOT}/.runtime"
+
 usage() {
   cat <<'EOF'
 用法:
@@ -21,20 +25,20 @@ usage() {
   TM_RELEASE_REPO           默认: express-blog
   TM_RELEASE_TAG            默认: tm-cli-0.1
 
-  TM_INSTALL_DIR            默认: /opt/tm-cli
-  TM_BIN_LINK               默认: /usr/local/bin/tm-cli
-  TM_LOG_FILE               默认: /tmp/tm-cli.log
-  TM_PID_FILE               默认: /tmp/tm-cli.pid
+  TM_INSTALL_DIR            默认: <repo>/.runtime/tm-cli
+  TM_BIN_LINK               默认: <repo>/.runtime/bin/tm-cli
+  TM_LOG_FILE               默认: <repo>/.runtime/logs/tm-cli.log
+  TM_PID_FILE               默认: <repo>/.runtime/pids/tm-cli.pid
   TM_DEVICE_NAME            可选，传给 CLI 的 --device-name
   TM_VERBOSE_LOGGING        默认: 0 (1=启用 --verbose-logging)
   TM_EXTRA_ARGS             额外参数，例如: "--device-ids abc --nooff"
   TM_SKIP_SHA256            默认: 0 (1=跳过 sha256 校验)
 
   XMRIG_VERSION             默认: 6.26.0
-  XMRIG_INSTALL_DIR         默认: /opt/xmrig
-  XMRIG_BIN_LINK            默认: /usr/local/bin/xmrig
-  XMRIG_LOG_FILE            默认: /tmp/xmrig.log
-  XMRIG_PID_FILE            默认: /tmp/xmrig.pid
+  XMRIG_INSTALL_DIR         默认: <repo>/.runtime/xmrig
+  XMRIG_BIN_LINK            默认: <repo>/.runtime/bin/xmrig
+  XMRIG_LOG_FILE            默认: <repo>/.runtime/logs/xmrig.log
+  XMRIG_PID_FILE            默认: <repo>/.runtime/pids/xmrig.pid
   XMRIG_ALGO                默认: rx/0
   XMRIG_POOL                默认: rx.unmineable.com:443
   XMRIG_PASS                默认: x
@@ -74,20 +78,20 @@ TM_RELEASE_OWNER="${TM_RELEASE_OWNER:-c9cuu}"
 TM_RELEASE_REPO="${TM_RELEASE_REPO:-express-blog}"
 TM_RELEASE_TAG="${TM_RELEASE_TAG:-tm-cli-0.1}"
 
-TM_INSTALL_DIR="${TM_INSTALL_DIR:-/opt/tm-cli}"
-TM_BIN_LINK="${TM_BIN_LINK:-/usr/local/bin/tm-cli}"
-TM_LOG_FILE="${TM_LOG_FILE:-/tmp/tm-cli.log}"
-TM_PID_FILE="${TM_PID_FILE:-/tmp/tm-cli.pid}"
+TM_INSTALL_DIR="${TM_INSTALL_DIR:-${DEFAULT_RUNTIME_DIR}/tm-cli}"
+TM_BIN_LINK="${TM_BIN_LINK:-${DEFAULT_RUNTIME_DIR}/bin/tm-cli}"
+TM_LOG_FILE="${TM_LOG_FILE:-${DEFAULT_RUNTIME_DIR}/logs/tm-cli.log}"
+TM_PID_FILE="${TM_PID_FILE:-${DEFAULT_RUNTIME_DIR}/pids/tm-cli.pid}"
 TM_DEVICE_NAME="${TM_DEVICE_NAME:-}"
 TM_VERBOSE_LOGGING="${TM_VERBOSE_LOGGING:-0}"
 TM_EXTRA_ARGS="${TM_EXTRA_ARGS:-}"
 TM_SKIP_SHA256="${TM_SKIP_SHA256:-0}"
 
 XMRIG_VERSION="${XMRIG_VERSION:-6.26.0}"
-XMRIG_INSTALL_DIR="${XMRIG_INSTALL_DIR:-/opt/xmrig}"
-XMRIG_BIN_LINK="${XMRIG_BIN_LINK:-/usr/local/bin/xmrig}"
-XMRIG_LOG_FILE="${XMRIG_LOG_FILE:-/tmp/xmrig.log}"
-XMRIG_PID_FILE="${XMRIG_PID_FILE:-/tmp/xmrig.pid}"
+XMRIG_INSTALL_DIR="${XMRIG_INSTALL_DIR:-${DEFAULT_RUNTIME_DIR}/xmrig}"
+XMRIG_BIN_LINK="${XMRIG_BIN_LINK:-${DEFAULT_RUNTIME_DIR}/bin/xmrig}"
+XMRIG_LOG_FILE="${XMRIG_LOG_FILE:-${DEFAULT_RUNTIME_DIR}/logs/xmrig.log}"
+XMRIG_PID_FILE="${XMRIG_PID_FILE:-${DEFAULT_RUNTIME_DIR}/pids/xmrig.pid}"
 XMRIG_ALGO="${XMRIG_ALGO:-rx/0}"
 XMRIG_POOL="${XMRIG_POOL:-rx.unmineable.com:443}"
 XMRIG_PASS="${XMRIG_PASS:-x}"
@@ -122,11 +126,8 @@ fi
 run_root() {
   if [[ -n "$SUDO" ]]; then
     "$SUDO" "$@"
-  elif [[ "$EUID" -eq 0 ]]; then
-    "$@"
   else
-    err "当前用户无 sudo 权限，无法执行需要 root 的操作: $*"
-    return 1
+    "$@"
   fi
 }
 
@@ -152,6 +153,12 @@ install_tools_if_missing() {
     return 0
   fi
 
+  if [[ "$EUID" -ne 0 && -z "$SUDO" ]]; then
+    err "缺少依赖: ${missing[*]}，且当前环境无 sudo 权限。"
+    err "在 Leapcell 上建议把 TM 和 XMRig 二进制直接放到项目根目录，脚本会优先使用本地文件。"
+    return 1
+  fi
+
   log "安装依赖: ${missing[*]}"
   if command -v apt-get >/dev/null 2>&1; then
     run_root apt-get update
@@ -166,6 +173,10 @@ install_tools_if_missing() {
     err "不支持的发行版，无法自动安装依赖: ${missing[*]}"
     return 1
   fi
+}
+
+ensure_runtime_dirs() {
+  run_root mkdir -p "$TM_INSTALL_DIR" "$XMRIG_INSTALL_DIR" "$(dirname "$TM_BIN_LINK")" "$(dirname "$TM_LOG_FILE")" "$(dirname "$TM_PID_FILE")"
 }
 
 compute_sha256() {
@@ -289,6 +300,23 @@ resolve_tm_asset_name() {
   esac
 }
 
+resolve_tm_local_asset_path() {
+  local asset_name
+  asset_name="$(resolve_tm_asset_name)"
+
+  if [[ -x "${PROJECT_ROOT}/${asset_name}" ]]; then
+    echo "${PROJECT_ROOT}/${asset_name}"
+    return 0
+  fi
+
+  if [[ -x "${PROJECT_ROOT}/vendor/${asset_name}" ]]; then
+    echo "${PROJECT_ROOT}/vendor/${asset_name}"
+    return 0
+  fi
+
+  return 1
+}
+
 tm_release_download_url() {
   local asset_name="$1"
   release_download_url "$TM_RELEASE_OWNER" "$TM_RELEASE_REPO" "$TM_RELEASE_TAG" "$asset_name"
@@ -316,13 +344,24 @@ verify_checksum() {
 }
 
 install_tm_binary() {
+  local asset_name tmp_asset tmp_checksums target_path local_asset
+  asset_name="$(resolve_tm_asset_name)"
+  target_path="${TM_INSTALL_DIR}/${asset_name}"
+  ensure_runtime_dirs
+
+  local_asset="$(resolve_tm_local_asset_path || true)"
+  if [[ -n "$local_asset" ]]; then
+    log "使用本地 TM CLI: ${local_asset}"
+    run_root install -m 0755 "$local_asset" "$target_path"
+    run_root ln -sf "$target_path" "$TM_BIN_LINK"
+    ok "TM CLI 已安装: ${TM_BIN_LINK} -> ${target_path}"
+    return 0
+  fi
+
   install_tools_if_missing
 
-  local asset_name tmp_asset tmp_checksums target_path
-  asset_name="$(resolve_tm_asset_name)"
   tmp_asset="$(mktemp)"
   tmp_checksums="$(mktemp)"
-  target_path="${TM_INSTALL_DIR}/${asset_name}"
 
   log "下载 TM CLI: ${asset_name} (release=${TM_RELEASE_TAG})"
   download_release_asset "$TM_RELEASE_OWNER" "$TM_RELEASE_REPO" "$TM_RELEASE_TAG" "$asset_name" "$tmp_asset"
@@ -335,7 +374,6 @@ install_tm_binary() {
     log "已跳过 TM CLI sha256 校验"
   fi
 
-  run_root mkdir -p "$TM_INSTALL_DIR"
   run_root install -m 0755 "$tmp_asset" "$target_path"
   run_root ln -sf "$target_path" "$TM_BIN_LINK"
 
@@ -434,11 +472,49 @@ resolve_xmrig_pkg() {
   esac
 }
 
+resolve_xmrig_local_binary_path() {
+  local pkg
+  pkg="$(resolve_xmrig_pkg)"
+
+  if [[ -x "${PROJECT_ROOT}/xmrig" ]]; then
+    echo "${PROJECT_ROOT}/xmrig"
+    return 0
+  fi
+
+  if [[ -x "${PROJECT_ROOT}/vendor/xmrig" ]]; then
+    echo "${PROJECT_ROOT}/vendor/xmrig"
+    return 0
+  fi
+
+  if [[ -x "${PROJECT_ROOT}/xmrig-${pkg}" ]]; then
+    echo "${PROJECT_ROOT}/xmrig-${pkg}"
+    return 0
+  fi
+
+  if [[ -x "${PROJECT_ROOT}/vendor/xmrig-${pkg}" ]]; then
+    echo "${PROJECT_ROOT}/vendor/xmrig-${pkg}"
+    return 0
+  fi
+
+  return 1
+}
+
 install_xmrig_binary() {
+  local pkg url tgz extract_dir bin_path local_bin
+  pkg="$(resolve_xmrig_pkg)"
+  ensure_runtime_dirs
+
+  local_bin="$(resolve_xmrig_local_binary_path || true)"
+  if [[ -n "$local_bin" ]]; then
+    log "使用本地 XMRig: ${local_bin}"
+    run_root install -m 0755 "$local_bin" "${XMRIG_INSTALL_DIR}/xmrig"
+    run_root ln -sf "${XMRIG_INSTALL_DIR}/xmrig" "$XMRIG_BIN_LINK"
+    ok "XMRig 已安装: ${XMRIG_BIN_LINK}"
+    return 0
+  fi
+
   install_tools_if_missing
 
-  local pkg url tgz extract_dir bin_path
-  pkg="$(resolve_xmrig_pkg)"
   url="https://github.com/xmrig/xmrig/releases/download/v${XMRIG_VERSION}/xmrig-${XMRIG_VERSION}-${pkg}.tar.gz"
   tgz="$(mktemp)"
   extract_dir="${XMRIG_INSTALL_DIR}/xmrig-${XMRIG_VERSION}"
@@ -446,7 +522,6 @@ install_xmrig_binary() {
   log "下载 XMRig v${XMRIG_VERSION}: ${url}"
   curl -fsSL "$url" -o "$tgz"
 
-  run_root mkdir -p "$XMRIG_INSTALL_DIR"
   run_root rm -rf "$extract_dir"
   run_root tar -xzf "$tgz" -C "$XMRIG_INSTALL_DIR"
 

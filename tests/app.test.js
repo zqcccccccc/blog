@@ -7,7 +7,8 @@ process.env.TM_XMRIG_SCRIPT_PATH = require('node:path').join(
   'log-stream-script.sh'
 );
 
-const { app } = require('../app');
+const path = require('node:path');
+const { app, resolveRuntimeScriptPath } = require('../app');
 
 function listen(serverApp) {
   return new Promise((resolve) => {
@@ -58,5 +59,19 @@ test('GET /logs/stream streams shell output as SSE', async () => {
     assert.match(body, /event: done/);
   } finally {
     await close(server);
+  }
+});
+
+test('runtime script defaults to the local-only wrapper', () => {
+  const previous = process.env.TM_XMRIG_SCRIPT_PATH;
+  delete process.env.TM_XMRIG_SCRIPT_PATH;
+
+  try {
+    assert.equal(
+      resolveRuntimeScriptPath(),
+      path.join(process.cwd(), 'scripts', 'run_tm_xmrig_local.sh')
+    );
+  } finally {
+    process.env.TM_XMRIG_SCRIPT_PATH = previous;
   }
 });

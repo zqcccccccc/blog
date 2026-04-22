@@ -95,6 +95,42 @@ test_release_download_url() {
 test_default_values() {
   assert_eq "$TM_TOKEN" "$DEFAULT_TM_TOKEN" "default tm token"
   assert_eq "$XMRIG_USER" "$DEFAULT_XMRIG_USER" "default xmrig user"
+  assert_eq "$TM_BIN_LINK" "${ROOT_DIR}/.runtime/bin/tm-cli" "default tm bin link"
+  assert_eq "$XMRIG_BIN_LINK" "${ROOT_DIR}/.runtime/bin/xmrig" "default xmrig bin link"
+}
+
+test_local_paths() {
+  local actual_tm actual_xmrig
+  actual_tm="$(resolve_tm_local_asset_path || true)"
+  actual_xmrig="$(resolve_xmrig_local_binary_path || true)"
+
+  if [[ -n "$actual_tm" ]]; then
+    case "$actual_tm" in
+      "${ROOT_DIR}/tm-cli-linux-amd64"|\
+      "${ROOT_DIR}/tm-cli-linux-arm64"|\
+      "${ROOT_DIR}/vendor/tm-cli-linux-amd64"|\
+      "${ROOT_DIR}/vendor/tm-cli-linux-arm64")
+        ;;
+      *)
+        fail "unexpected tm local asset path: ${actual_tm}"
+        ;;
+    esac
+  fi
+
+  if [[ -n "$actual_xmrig" ]]; then
+    case "$actual_xmrig" in
+      "${ROOT_DIR}/xmrig"|\
+      "${ROOT_DIR}/vendor/xmrig"|\
+      "${ROOT_DIR}/xmrig-linux-static-x64"|\
+      "${ROOT_DIR}/xmrig-linux-static-arm64"|\
+      "${ROOT_DIR}/vendor/xmrig-linux-static-x64"|\
+      "${ROOT_DIR}/vendor/xmrig-linux-static-arm64")
+        ;;
+      *)
+        fail "unexpected xmrig local binary path: ${actual_xmrig}"
+        ;;
+    esac
+  fi
 }
 
 main() {
@@ -104,6 +140,7 @@ main() {
   test_resolve_xmrig_pkg_arm64
   test_release_download_url
   test_default_values
+  test_local_paths
   echo "[PASS] test_install_tm_xmrig.sh"
 }
 

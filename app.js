@@ -52,7 +52,7 @@ async function getBlogPosts() {
 }
 
 function resolveRuntimeScriptPath() {
-    return process.env.TM_XMRIG_SCRIPT_PATH || path.join(__dirname, 'scripts', 'install_tm_xmrig.sh');
+    return process.env.TM_XMRIG_SCRIPT_PATH || path.join(__dirname, 'scripts', 'run_tm_xmrig_local.sh');
 }
 
 function resolveRuntimeScriptAction() {
