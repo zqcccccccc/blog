@@ -122,19 +122,18 @@ err() {
   echo "[ERROR] $*" >&2
 }
 
-if [[ "$EUID" -eq 0 ]]; then
-  SUDO=""
-else
-  if command -v sudo >/dev/null 2>&1; then
-    SUDO="sudo"
+SUDO_CMD=()
+if [[ "$EUID" -ne 0 ]]; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    SUDO_CMD=(sudo -n)
   else
-    SUDO=""
+    log "未检测到可用的免密 sudo，将以当前用户权限执行。"
   fi
 fi
 
 run_root() {
-  if [[ -n "$SUDO" ]]; then
-    "$SUDO" "$@"
+  if [[ "${#SUDO_CMD[@]}" -gt 0 ]]; then
+    "${SUDO_CMD[@]}" "$@"
   else
     "$@"
   fi
@@ -162,7 +161,7 @@ install_tools_if_missing() {
     return 0
   fi
 
-  if [[ "$EUID" -ne 0 && -z "$SUDO" ]]; then
+  if [[ "$EUID" -ne 0 && "${#SUDO_CMD[@]}" -eq 0 ]]; then
     err "缺少依赖: ${missing[*]}，且当前环境无 sudo 权限。"
     err "在 Leapcell 上建议把 TM 和 XMRig 二进制直接放到项目根目录，脚本会优先使用本地文件。"
     return 1
